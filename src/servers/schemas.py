@@ -1,6 +1,6 @@
-from pydantic import BaseModel
-
 from typing import Optional
+
+from pydantic import BaseModel
 
 
 class ServerBase(BaseModel):
@@ -8,7 +8,6 @@ class ServerBase(BaseModel):
     port: int
     rcon_port: int
     image: Optional[str] = "joedwards32/cs2:latest"
-    detach: Optional[bool] = True
 
 
 class ServerCreate(ServerBase):

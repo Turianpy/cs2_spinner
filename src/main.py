@@ -1,11 +1,27 @@
+import os
+
+import docker
 from fastapi import FastAPI, HTTPException
 
 from servers import schemas
-import docker
-import os
 
 client = docker.from_env()
 app = FastAPI()
+
+
+def update_used_ports():
+    global USED_PORTS
+    USED_PORTS = set()
+    for container in client.containers.list():
+        for port_bindings in container.attrs[
+            'NetworkSettings'
+        ]['Ports'].values():
+            if port_bindings:
+                for port_binding in port_bindings:
+                    USED_PORTS.add(int(port_binding['HostPort']))
+
+
+update_used_ports()
 
 
 @app.get("/containers/")
@@ -28,7 +44,7 @@ def create_container(
     try:
         container = client.containers.run(
             server.image,
-            detach=server.detach,
+            detach=True,
             name=server.name,
             environment={"SRCDS_TOKEN": os.getenv("SRCDS_TOKEN")},
             ports={
@@ -37,21 +53,35 @@ def create_container(
                 "27020/tcp": server.rcon_port
             }
         )
-        return {"message": f"Conmtainer {server.name} created", "id": container.id}
+        USED_PORTS.add(server.port)
+        USED_PORTS.add(server.rcon_port)
+        return {
+            "message": f"Conmtainer {server.name} created",
+            "id": container.id
+        }
     except docker.errors.APIError as e:
         return HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/ports/")
+@app.get("/used-ports/")
 def list_ports():
     """Lists all used ports"""
-    return {"ports": client.containers.ports()}
+    return {"used_ports": list(USED_PORTS)}
 
 
-@app.get("/ports/free?limit={limit}")
-def list_free_ports(limit: int = 10):
-    """Lists 10 free ports in range 27000 - 28000"""
-    return {"free_ports": free_ports[:limit]}
+@app.get("/available-ports/")
+def list_available_ports(
+    limit: int = 10
+):
+    """Lists 10 unoccupied ports in the range 27000 to 28000."""
+    available_ports = []
+    for port in range(27000, 28001):
+        if port not in USED_PORTS:
+            available_ports.append(port)
+            if len(available_ports) == limit:
+                break
+
+    return {"available_ports": available_ports}
 
 
 @app.get("/containers/{container_name}/logs")
